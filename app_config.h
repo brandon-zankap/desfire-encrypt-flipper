@@ -12,6 +12,7 @@ typedef struct {
     uint32_t start_cid;     // first CID to write
     uint32_t end_cid;       // last CID to write
     bool     change_key;    // whether to change key from default to app_key
+    bool     decimal_cid;   // treat CID range as decimal (69 → 0x69 instead of 0x45)
 } DesfireSeqConfig;
 
 void desfire_seq_config_defaults(DesfireSeqConfig* cfg);

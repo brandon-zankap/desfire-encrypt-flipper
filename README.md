@@ -40,6 +40,7 @@ Default values:
 | `start_cid` | `1` | First CID for sequential writing |
 | `end_cid` | `1000` | Last CID for sequential writing |
 | `change_key` | `true` | Whether to change the app key from the default DESFire key during app creation |
+| `decimal_cid` | `false` | Decimal CID mode — treat CID range as decimal numbers encoded into hex (see below) |
 
 ## How it works
 
@@ -67,6 +68,35 @@ All crypto (AES-128-CBC, AES-CMAC for IV tracking, DESFire CRC32) is handled in 
 | `nfc_transport_flipper.c` / `.h` | Flipper NFC poller abstraction |
 | `app_config.c` / `.h` | Config load/save to SD card |
 
-## Security
+## Decimal CID mode
 
-Only use this with tags and Akuvox systems you own or are authorised to administer.
+When **Decimal CID** is set to Yes in config, the sequential counter values are treated as decimal numbers and encoded directly into hex. This is useful when your access control system expects CIDs that read as decimal numbers.
+
+| Counter | Decimal CID Off (hex) | Decimal CID On |
+|---------|----------------------|----------------|
+| 10 | `0000000A` | `00000010` |
+| 69 | `00000045` | `00000069` |
+| 1000 | `000003E8` | `00001000` |
+
+When toggling this option, the Start/End CID display automatically converts between hex and decimal representation.
+
+## Changelog
+
+### v2.0
+- **UI overhaul: Config screen** — Replaced hand-rolled widget config with native Flipper `VariableItemList`. File ID, Key Index, and Change Key use left/right arrows to toggle. App ID, App Key, and CID range open a text input on OK press.
+- **UI overhaul: Write One CID** — Replaced full QWERTY keyboard with Flipper's `ByteInput` hex keypad (0–9, A–F only) for entering the 4-byte CID.
+- **UI fix: Read/Test Tag** — Removed raw hex file dump that was pushing the "BACK to return" text off-screen. Cleaner layout showing just the decoded CID.
+- **Decimal CID mode** — New config toggle. When enabled, sequential CID counter values are encoded as decimal-in-hex (e.g. counter 69 → `0x00000069` instead of `0x00000045`). Start/End CID display and input automatically switch between hex and decimal when toggling.
+- **CID fields now hex** — Start CID and End CID config input changed from decimal to hex (matching the display format). In decimal CID mode, they switch to decimal input.
+
+### v1.0
+- **Encrypted read fix** — Implemented AES-CMAC (RFC 4493) session IV tracking. Reads now compute CMAC over the ReadData command before decrypting the response, fixing garbage decryption output.
+- **Encrypted write fix** — Removed erroneous CMAC call from encrypted writes. DESFire encrypted writes use CRC32 inside the encrypted payload for integrity, not CMAC (asymmetric with reads).
+- **File creation fix** — Changed `CreateStdDataFile` to use comm mode 0x03 (encrypted) and 8-byte file size, matching the Akuvox card format. Previously used comm 0x00 (plain) and 32 bytes.
+- **Read size fix** — Now reads the full 8-byte encrypted file instead of only 4 bytes, preventing decryption padding errors.
+- **Removed GetFileSettings** — Hardcoded known file parameters (comm=0x03, size=8) to avoid CMAC tracking complexity from the extra command/response pair after auth.
+- **Re-auth pattern** — Write and read operations each re-authenticate before their critical section, ensuring a clean IV=0 state.
+- **Write One CID** — New feature to write a single CID to one tag (for replacements or testing).
+- **Read/Test Tag** — New feature to read and display the CID from an existing card.
+- **Result screen back-navigation fix** — Pressing BACK on the Done screen now returns to the main menu instead of restarting the write loop.
+- **Config auto-creation** — App generates config.txt with defaults on first launch; no manual file creation needed.

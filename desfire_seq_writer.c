@@ -98,12 +98,10 @@ DesfireSeqApp* desfire_seq_app_alloc(void) {
     view_dispatcher_add_view(
         app->view_dispatcher, DesfireSeqViewSubmenu, submenu_get_view(app->submenu));
 
-    app->widget_config = widget_alloc();
+    app->var_item_list = variable_item_list_alloc();
     view_dispatcher_add_view(
-        app->view_dispatcher, DesfireSeqViewConfig, widget_get_view(app->widget_config));
-    view_set_context(widget_get_view(app->widget_config), app);
-    view_set_input_callback(
-        widget_get_view(app->widget_config), desfire_seq_view_input_callback);
+        app->view_dispatcher, DesfireSeqViewConfig,
+        variable_item_list_get_view(app->var_item_list));
 
     app->widget_running = widget_alloc();
     view_dispatcher_add_view(
@@ -137,6 +135,11 @@ DesfireSeqApp* desfire_seq_app_alloc(void) {
     view_set_input_callback(
         widget_get_view(app->widget_write_one), desfire_seq_view_input_callback);
 
+    app->byte_input_hex = byte_input_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, DesfireSeqViewByteInput,
+        byte_input_get_view(app->byte_input_hex));
+
     return app;
 }
 
@@ -152,14 +155,16 @@ void desfire_seq_app_free(DesfireSeqApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, DesfireSeqViewTextInput);
     view_dispatcher_remove_view(app->view_dispatcher, DesfireSeqViewReadTest);
     view_dispatcher_remove_view(app->view_dispatcher, DesfireSeqViewWriteOne);
+    view_dispatcher_remove_view(app->view_dispatcher, DesfireSeqViewByteInput);
 
     submenu_free(app->submenu);
-    widget_free(app->widget_config);
+    variable_item_list_free(app->var_item_list);
     widget_free(app->widget_running);
     widget_free(app->widget_result);
     widget_free(app->widget_read_test);
     widget_free(app->widget_write_one);
     text_input_free(app->text_input);
+    byte_input_free(app->byte_input_hex);
 
     view_dispatcher_free(app->view_dispatcher);
 

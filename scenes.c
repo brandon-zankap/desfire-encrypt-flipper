@@ -65,85 +65,95 @@ void scene_main_on_exit(void* ctx) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SCENE: CONFIG
+//  SCENE: CONFIG  (VariableItemList)
 // ═══════════════════════════════════════════════════════════
 
-static void config_refresh(DesfireSeqApp* app) {
-    widget_reset(app->widget_config);
-    char line[64];
+enum {
+    ConfigItemAID = 0,
+    ConfigItemFileID,
+    ConfigItemKeyIndex,
+    ConfigItemAppKey,
+    ConfigItemStartCID,
+    ConfigItemEndCID,
+    ConfigItemChangeKey,
+    ConfigItemDecimalCID,
+};
 
-    widget_add_string_element(
-        app->widget_config, 0, 0, AlignLeft, AlignTop, FontPrimary, "[ Config ]");
+// Static item pointers so text-input callbacks can update displayed values
+static VariableItem* cfg_item_aid;
+static VariableItem* cfg_item_key;
+static VariableItem* cfg_item_start;
+static VariableItem* cfg_item_end;
 
-    // Line 1: AID & File ID
-    snprintf(
-        line,
-        sizeof(line),
-        "%sAID:%06lX %sFile:%u",
-        app->edit_field == 0 ? ">" : " ",
-        app->cfg.app_id,
-        app->edit_field == 1 ? ">" : " ",
-        app->cfg.file_id);
-    widget_add_string_element(app->widget_config, 0, 13, AlignLeft, AlignTop, FontSecondary, line);
+// ── Left/right change callbacks ──────────────────────────
 
-    // Line 2: Key Index & Change Key
-    snprintf(
-        line,
-        sizeof(line),
-        "%sKeyIdx:%u %sChgKey:%s",
-        app->edit_field == 2 ? ">" : " ",
-        app->cfg.key_index,
-        app->edit_field == 6 ? ">" : " ",
-        app->cfg.change_key ? "Y" : "N");
-    widget_add_string_element(app->widget_config, 0, 23, AlignLeft, AlignTop, FontSecondary, line);
-
-    // Line 3: Key
-    char key_short[12];
-    for(int i = 0; i < 4; i++) snprintf(key_short + i * 2, 3, "%02X", app->cfg.app_key[i]);
-    snprintf(line, sizeof(line), "%sKey: %s...", app->edit_field == 3 ? ">" : " ", key_short);
-    widget_add_string_element(app->widget_config, 0, 33, AlignLeft, AlignTop, FontSecondary, line);
-
-    // Line 4: CID Range
-    snprintf(
-        line,
-        sizeof(line),
-        "%sStart:%08lX %sEnd:%08lX",
-        app->edit_field == 4 ? ">" : " ",
-        app->cfg.start_cid,
-        app->edit_field == 5 ? ">" : " ",
-        app->cfg.end_cid);
-    widget_add_string_element(app->widget_config, 0, 43, AlignLeft, AlignTop, FontSecondary, line);
-
-    widget_add_string_element(
-        app->widget_config, 0, 55, AlignLeft, AlignTop, FontSecondary, "Up/Dn=Sel OK=Edit BACK=Ret");
+static void config_change_file_id(VariableItem* item) {
+    DesfireSeqApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    app->cfg.file_id = idx;
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%u", idx);
+    variable_item_set_current_value_text(item, buf);
 }
 
-// Text input callbacks for each field
+static void config_change_key_index(VariableItem* item) {
+    DesfireSeqApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    app->cfg.key_index = idx;
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%u", idx);
+    variable_item_set_current_value_text(item, buf);
+}
+
+static void config_change_key_toggle(VariableItem* item) {
+    DesfireSeqApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    app->cfg.change_key = (idx == 1);
+    variable_item_set_current_value_text(item, idx ? "Yes" : "No");
+}
+
+static void config_update_cid_display(DesfireSeqApp* app) {
+    char buf[12];
+    if(app->cfg.decimal_cid) {
+        snprintf(buf, sizeof(buf), "%lu", app->cfg.start_cid);
+        variable_item_set_current_value_text(cfg_item_start, buf);
+        snprintf(buf, sizeof(buf), "%lu", app->cfg.end_cid);
+        variable_item_set_current_value_text(cfg_item_end, buf);
+    } else {
+        snprintf(buf, sizeof(buf), "%08lX", app->cfg.start_cid);
+        variable_item_set_current_value_text(cfg_item_start, buf);
+        snprintf(buf, sizeof(buf), "%08lX", app->cfg.end_cid);
+        variable_item_set_current_value_text(cfg_item_end, buf);
+    }
+}
+
+static void config_change_decimal_cid(VariableItem* item) {
+    DesfireSeqApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    app->cfg.decimal_cid = (idx == 1);
+    variable_item_set_current_value_text(item, idx ? "Yes" : "No");
+    config_update_cid_display(app);
+}
+
+// Convert a decimal counter to its hex-digit equivalent.
+// E.g. 69 → 0x69, 1000 → 0x1000. Max 99999999.
+static uint32_t decimal_to_hex_cid(uint32_t dec) {
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%lu", dec);
+    return strtoul(buf, NULL, 16);
+}
+
+// ── Text-input save callbacks ────────────────────────────
+
 static void ti_save_app_id(void* ctx) {
     DesfireSeqApp* app = ctx;
     char* endp;
     uint32_t val = strtoul(app->text_buf, &endp, 16);
     if(*endp == '\0' && val <= 0xFFFFFF) app->cfg.app_id = val;
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%06lX", app->cfg.app_id);
+    variable_item_set_current_value_text(cfg_item_aid, buf);
     view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewConfig);
-    config_refresh(app);
-}
-
-static void ti_save_file_id(void* ctx) {
-    DesfireSeqApp* app = ctx;
-    char* endp;
-    uint32_t val = strtoul(app->text_buf, &endp, 10);
-    if(*endp == '\0' && val <= 16) app->cfg.file_id = (uint8_t)val;
-    view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewConfig);
-    config_refresh(app);
-}
-
-static void ti_save_key_index(void* ctx) {
-    DesfireSeqApp* app = ctx;
-    char* endp;
-    uint32_t val = strtoul(app->text_buf, &endp, 10);
-    if(*endp == '\0' && val <= 13) app->cfg.key_index = (uint8_t)val;
-    view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewConfig);
-    config_refresh(app);
 }
 
 static void ti_save_app_key(void* ctx) {
@@ -152,94 +162,81 @@ static void ti_save_app_key(void* ctx) {
         app->text_buf[i] = (char)toupper((unsigned char)app->text_buf[i]);
     uint8_t tmp[16];
     if(parse_hex_bytes(app->text_buf, tmp, 16)) memcpy(app->cfg.app_key, tmp, 16);
+    char ks[12];
+    for(int i = 0; i < 4; i++) snprintf(ks + i * 2, 3, "%02X", app->cfg.app_key[i]);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%s...", ks);
+    variable_item_set_current_value_text(cfg_item_key, buf);
     view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewConfig);
-    config_refresh(app);
 }
 
 static void ti_save_start_cid(void* ctx) {
     DesfireSeqApp* app = ctx;
     char* endp;
-    uint32_t val = strtoul(app->text_buf, &endp, 10);
+    int base = app->cfg.decimal_cid ? 10 : 16;
+    uint32_t val = strtoul(app->text_buf, &endp, base);
     if(*endp == '\0') {
         app->cfg.start_cid = val;
         if(app->cfg.start_cid > app->cfg.end_cid) app->cfg.end_cid = app->cfg.start_cid;
     }
+    config_update_cid_display(app);
     view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewConfig);
-    config_refresh(app);
 }
 
 static void ti_save_end_cid(void* ctx) {
     DesfireSeqApp* app = ctx;
     char* endp;
-    uint32_t val = strtoul(app->text_buf, &endp, 10);
+    int base = app->cfg.decimal_cid ? 10 : 16;
+    uint32_t val = strtoul(app->text_buf, &endp, base);
     if(*endp == '\0') app->cfg.end_cid = val;
+    config_update_cid_display(app);
     view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewConfig);
-    config_refresh(app);
 }
 
-static void ti_save_change_key(void* ctx) {
-    DesfireSeqApp* app = ctx;
-    for(size_t i = 0; i < strlen(app->text_buf); i++)
-        app->text_buf[i] = (char)tolower((unsigned char)app->text_buf[i]);
-    app->cfg.change_key =
-        (strcmp(app->text_buf, "y") == 0 || strcmp(app->text_buf, "yes") == 0 ||
-         strcmp(app->text_buf, "true") == 0 || strcmp(app->text_buf, "1") == 0);
-    view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewConfig);
-    config_refresh(app);
-}
+// ── OK-press callback → open text input for editable fields
 
-static void config_edit_field(DesfireSeqApp* app, uint8_t field) {
-    app->edit_field = field;
+static void config_enter_callback(void* context, uint32_t index) {
+    DesfireSeqApp* app = context;
     text_input_reset(app->text_input);
 
     const char* header = "";
     void (*save_cb)(void*) = NULL;
     uint8_t max_len = 12;
 
-    switch(field) {
-    case 0:
-        header = "App ID (6 hex chars)";
+    switch(index) {
+    case ConfigItemAID:
+        header = "App ID (6 hex)";
         snprintf(app->text_buf, sizeof(app->text_buf), "%06lX", app->cfg.app_id);
         save_cb = ti_save_app_id;
         max_len = 6;
         break;
-    case 1:
-        header = "File ID (0-16)";
-        snprintf(app->text_buf, sizeof(app->text_buf), "%u", app->cfg.file_id);
-        save_cb = ti_save_file_id;
-        max_len = 2;
-        break;
-    case 2:
-        header = "Key Index (0-13)";
-        snprintf(app->text_buf, sizeof(app->text_buf), "%u", app->cfg.key_index);
-        save_cb = ti_save_key_index;
-        max_len = 2;
-        break;
-    case 3:
-        header = "App Key (32 hex chars)";
+    case ConfigItemAppKey:
+        header = "App Key (32 hex)";
         for(int i = 0; i < 16; i++)
             snprintf(app->text_buf + i * 2, 3, "%02X", app->cfg.app_key[i]);
         save_cb = ti_save_app_key;
         max_len = 32;
         break;
-    case 4:
-        header = "Start CID (decimal)";
-        snprintf(app->text_buf, sizeof(app->text_buf), "%lu", app->cfg.start_cid);
+    case ConfigItemStartCID:
+        header = app->cfg.decimal_cid ? "Start CID (decimal)" : "Start CID (hex)";
+        if(app->cfg.decimal_cid)
+            snprintf(app->text_buf, sizeof(app->text_buf), "%lu", app->cfg.start_cid);
+        else
+            snprintf(app->text_buf, sizeof(app->text_buf), "%lX", app->cfg.start_cid);
         save_cb = ti_save_start_cid;
         max_len = 10;
         break;
-    case 5:
-        header = "End CID (decimal)";
-        snprintf(app->text_buf, sizeof(app->text_buf), "%lu", app->cfg.end_cid);
+    case ConfigItemEndCID:
+        header = app->cfg.decimal_cid ? "End CID (decimal)" : "End CID (hex)";
+        if(app->cfg.decimal_cid)
+            snprintf(app->text_buf, sizeof(app->text_buf), "%lu", app->cfg.end_cid);
+        else
+            snprintf(app->text_buf, sizeof(app->text_buf), "%lX", app->cfg.end_cid);
         save_cb = ti_save_end_cid;
         max_len = 10;
         break;
-    case 6:
-        header = "Change Key? (y/n)";
-        snprintf(app->text_buf, sizeof(app->text_buf), "%s", app->cfg.change_key ? "y" : "n");
-        save_cb = ti_save_change_key;
-        max_len = 5;
-        break;
+    default:
+        return; // file_id, key_index, change_key handled by left/right
     }
 
     text_input_set_header_text(app->text_input, header);
@@ -248,42 +245,74 @@ static void config_edit_field(DesfireSeqApp* app, uint8_t field) {
     view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewTextInput);
 }
 
+// ── Scene handlers ───────────────────────────────────────
+
 void scene_config_on_enter(void* ctx) {
     DesfireSeqApp* app = ctx;
-    config_refresh(app);
+    variable_item_list_reset(app->var_item_list);
+    char buf[34];
+
+    // AID — press OK to edit
+    cfg_item_aid = variable_item_list_add(app->var_item_list, "App ID (AID)", 1, NULL, app);
+    snprintf(buf, sizeof(buf), "%06lX", app->cfg.app_id);
+    variable_item_set_current_value_text(cfg_item_aid, buf);
+
+    // File ID — left/right 0-16
+    VariableItem* item_fid = variable_item_list_add(
+        app->var_item_list, "File ID", 17, config_change_file_id, app);
+    variable_item_set_current_value_index(item_fid, app->cfg.file_id);
+    snprintf(buf, sizeof(buf), "%u", app->cfg.file_id);
+    variable_item_set_current_value_text(item_fid, buf);
+
+    // Key Index — left/right 0-13
+    VariableItem* item_kidx = variable_item_list_add(
+        app->var_item_list, "Key Index", 14, config_change_key_index, app);
+    variable_item_set_current_value_index(item_kidx, app->cfg.key_index);
+    snprintf(buf, sizeof(buf), "%u", app->cfg.key_index);
+    variable_item_set_current_value_text(item_kidx, buf);
+
+    // App Key — press OK to edit
+    cfg_item_key = variable_item_list_add(app->var_item_list, "App Key", 1, NULL, app);
+    char ks[12];
+    for(int i = 0; i < 4; i++) snprintf(ks + i * 2, 3, "%02X", app->cfg.app_key[i]);
+    snprintf(buf, sizeof(buf), "%s...", ks);
+    variable_item_set_current_value_text(cfg_item_key, buf);
+
+    // Start CID — press OK to edit
+    cfg_item_start = variable_item_list_add(app->var_item_list, "Start CID", 1, NULL, app);
+
+    // End CID — press OK to edit
+    cfg_item_end = variable_item_list_add(app->var_item_list, "End CID", 1, NULL, app);
+
+    // Display start/end as decimal or hex based on mode
+    config_update_cid_display(app);
+
+    // Change Key — left/right Yes/No
+    VariableItem* item_chg = variable_item_list_add(
+        app->var_item_list, "Change Key", 2, config_change_key_toggle, app);
+    variable_item_set_current_value_index(item_chg, app->cfg.change_key ? 1 : 0);
+    variable_item_set_current_value_text(item_chg, app->cfg.change_key ? "Yes" : "No");
+
+    // Decimal CID — left/right Yes/No
+    VariableItem* item_dec = variable_item_list_add(
+        app->var_item_list, "Decimal CID", 2, config_change_decimal_cid, app);
+    variable_item_set_current_value_index(item_dec, app->cfg.decimal_cid ? 1 : 0);
+    variable_item_set_current_value_text(item_dec, app->cfg.decimal_cid ? "Yes" : "No");
+
+    variable_item_list_set_enter_callback(app->var_item_list, config_enter_callback, app);
     view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewConfig);
 }
 
 bool scene_config_on_event(void* ctx, SceneManagerEvent event) {
-    DesfireSeqApp* app = ctx;
-    if(event.type == SceneManagerEventTypeCustom) {
-        if(event.event == EventFieldEdit || event.event == EventKeyOk) {
-            config_edit_field(app, app->edit_field);
-            return true;
-        } else if(event.event == EventKeyUp) {
-            if(app->edit_field > 0)
-                app->edit_field--;
-            else
-                app->edit_field = 6;
-            config_refresh(app);
-            return true;
-        } else if(event.event == EventKeyDown) {
-            if(app->edit_field < 6)
-                app->edit_field++;
-            else
-                app->edit_field = 0;
-            config_refresh(app);
-            return true;
-        }
-    }
+    UNUSED(ctx);
+    UNUSED(event);
     return false;
 }
 
 void scene_config_on_exit(void* ctx) {
     DesfireSeqApp* app = ctx;
-    // Save config when leaving config screen
     desfire_seq_config_save(&app->cfg);
-    widget_reset(app->widget_config);
+    variable_item_list_reset(app->var_item_list);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -319,15 +348,18 @@ static int32_t nfc_write_worker(void* ctx) {
             continue;
         }
 
+        uint32_t write_cid = app->cfg.decimal_cid ?
+            decimal_to_hex_cid(app->current_cid) : app->current_cid;
+
         snprintf(
-            app->status_msg, sizeof(app->status_msg), "Programming CID %lu...", app->current_cid);
+            app->status_msg, sizeof(app->status_msg), "Programming CID %08lX...", write_cid);
         view_dispatcher_send_custom_event(app->view_dispatcher, EventWriteSuccess);
 
-        DesfireResult result = desfire_akuvox_personalise(&nfc, &app->cfg, app->current_cid);
+        DesfireResult result = desfire_akuvox_personalise(&nfc, &app->cfg, write_cid);
 
         // Log result
         akuvox_log_result(
-            &tag, app->current_cid, result == DesfireResultOk, desfire_result_name(result));
+            &tag, write_cid, result == DesfireResultOk, desfire_result_name(result));
 
         nfc_transport_close(&nfc);
 
@@ -338,7 +370,7 @@ static int32_t nfc_write_worker(void* ctx) {
 
             app->written_count++;
             snprintf(
-                app->status_msg, sizeof(app->status_msg), "OK: CID %lu", app->current_cid);
+                app->status_msg, sizeof(app->status_msg), "OK: CID %08lX", write_cid);
             app->current_cid++;
             view_dispatcher_send_custom_event(app->view_dispatcher, EventWriteSuccess);
             furi_delay_ms(800);
@@ -374,7 +406,9 @@ static void running_refresh(DesfireSeqApp* app) {
     widget_add_string_element(
         app->widget_running, 0, 13, AlignLeft, AlignTop, FontSecondary, line);
 
-    snprintf(line, sizeof(line), "Next CID: %08lX", app->current_cid);
+    uint32_t next_cid = app->cfg.decimal_cid ?
+        decimal_to_hex_cid(app->current_cid) : app->current_cid;
+    snprintf(line, sizeof(line), "Next CID: %08lX", next_cid);
     widget_add_string_element(
         app->widget_running, 0, 23, AlignLeft, AlignTop, FontSecondary, line);
 
@@ -561,7 +595,7 @@ static void read_test_refresh(DesfireSeqApp* app) {
     char line[48];
 
     widget_add_string_element(
-        app->widget_read_test, 0, 0, AlignLeft, AlignTop, FontPrimary, "[ Read/Test Tag ]");
+        app->widget_read_test, 0, 0, AlignLeft, AlignTop, FontPrimary, "Read/Test Tag");
 
     snprintf(
         line, sizeof(line), "AID:%06lX File:%u Key#:%u",
@@ -569,32 +603,11 @@ static void read_test_refresh(DesfireSeqApp* app) {
     widget_add_string_element(
         app->widget_read_test, 0, 14, AlignLeft, AlignTop, FontSecondary, line);
 
-    char key_short[12];
-    for(int i = 0; i < 4; i++) snprintf(key_short + i * 2, 3, "%02X", app->cfg.app_key[i]);
-    snprintf(line, sizeof(line), "Key: %s...", key_short);
     widget_add_string_element(
-        app->widget_read_test, 0, 24, AlignLeft, AlignTop, FontSecondary, line);
+        app->widget_read_test, 0, 28, AlignLeft, AlignTop, FontPrimary, app->read_status);
 
     widget_add_string_element(
-        app->widget_read_test, 0, 32, AlignLeft, AlignTop, FontPrimary, app->read_status);
-
-    if(app->read_raw_len > 0) {
-        char hex[64];
-        int pos = 0;
-        size_t row1 = app->read_raw_len > 8 ? 8 : app->read_raw_len;
-        for(size_t i = 0; i < row1; i++) pos += snprintf(hex + pos, 4, "%02X ", app->read_raw[i]);
-        widget_add_string_element(app->widget_read_test, 0, 42, AlignLeft, AlignTop, FontSecondary, hex);
-
-        if(app->read_raw_len > 8) {
-            pos = 0;
-            size_t row2 = app->read_raw_len;
-            for(size_t i = 8; i < row2; i++) pos += snprintf(hex + pos, 4, "%02X ", app->read_raw[i]);
-            widget_add_string_element(app->widget_read_test, 0, 50, AlignLeft, AlignTop, FontSecondary, hex);
-        }
-    }
-
-    widget_add_string_element(
-        app->widget_read_test, 0, 58, AlignLeft, AlignTop, FontSecondary, "BACK to return");
+        app->widget_read_test, 0, 52, AlignLeft, AlignTop, FontSecondary, "Press BACK to return");
 }
 
 void scene_read_test_on_enter(void* ctx) {
@@ -642,25 +655,28 @@ void scene_read_test_on_exit(void* ctx) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SCENE: WRITE ONE — CID text input
+//  SCENE: WRITE ONE — CID hex input (ByteInput)
 // ═══════════════════════════════════════════════════════════
 
-static void ti_save_write_one_cid(void* ctx) {
+static void byte_input_save_cid(void* ctx) {
     DesfireSeqApp* app = ctx;
-    char* endp;
-    uint32_t val = strtoul(app->text_buf, &endp, 16);
-    if(*endp == '\0') app->write_one_cid = val;
+    app->write_one_cid = ((uint32_t)app->byte_input_buf[0] << 24) |
+                          ((uint32_t)app->byte_input_buf[1] << 16) |
+                          ((uint32_t)app->byte_input_buf[2] << 8) |
+                          (uint32_t)app->byte_input_buf[3];
     scene_manager_next_scene(app->scene_manager, DesfireSeqSceneWriteOneRun);
 }
 
 void scene_write_one_on_enter(void* ctx) {
     DesfireSeqApp* app = ctx;
-    text_input_reset(app->text_input);
-    text_input_set_header_text(app->text_input, "CID to write (hex)");
-    snprintf(app->text_buf, sizeof(app->text_buf), "%lX", app->write_one_cid);
-    text_input_set_result_callback(
-        app->text_input, ti_save_write_one_cid, app, app->text_buf, 9, true);
-    view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewTextInput);
+    byte_input_set_header_text(app->byte_input_hex, "CID to write (4 bytes)");
+    app->byte_input_buf[0] = (uint8_t)(app->write_one_cid >> 24);
+    app->byte_input_buf[1] = (uint8_t)(app->write_one_cid >> 16);
+    app->byte_input_buf[2] = (uint8_t)(app->write_one_cid >> 8);
+    app->byte_input_buf[3] = (uint8_t)(app->write_one_cid);
+    byte_input_set_result_callback(
+        app->byte_input_hex, byte_input_save_cid, NULL, app, app->byte_input_buf, 4);
+    view_dispatcher_switch_to_view(app->view_dispatcher, DesfireSeqViewByteInput);
 }
 
 bool scene_write_one_on_event(void* ctx, SceneManagerEvent event) {
@@ -670,8 +686,7 @@ bool scene_write_one_on_event(void* ctx, SceneManagerEvent event) {
 }
 
 void scene_write_one_on_exit(void* ctx) {
-    DesfireSeqApp* app = ctx;
-    text_input_reset(app->text_input);
+    UNUSED(ctx);
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -9,6 +9,8 @@
 #include <gui/modules/submenu.h>
 #include <gui/modules/text_input.h>
 #include <gui/modules/widget.h>
+#include <gui/modules/variable_item_list.h>
+#include <gui/modules/byte_input.h>
 #include <notification/notification.h>
 #include <notification/notification_messages.h>
 #include <stdlib.h>
@@ -26,6 +28,7 @@ typedef enum {
     DesfireSeqViewTextInput,
     DesfireSeqViewReadTest,
     DesfireSeqViewWriteOne,
+    DesfireSeqViewByteInput,
 } DesfireSeqView;
 
 // ── Scene IDs ─────────────────────────────────────────────
@@ -49,19 +52,21 @@ typedef struct {
     NotificationApp* notifications;
 
     // Views
-    Submenu*    submenu;
-    Widget*     widget_config;
-    Widget*     widget_running;
-    Widget*     widget_result;
-    Widget*     widget_read_test;
-    Widget*     widget_write_one;
-    TextInput*  text_input;
+    Submenu*          submenu;
+    VariableItemList* var_item_list;
+    Widget*           widget_running;
+    Widget*           widget_result;
+    Widget*           widget_read_test;
+    Widget*           widget_write_one;
+    TextInput*        text_input;
+    ByteInput*        byte_input_hex;
 
     // Config
     DesfireSeqConfig cfg;
 
     // Editing state
-    uint8_t edit_field; // 0=app_id 1=file_id 2=key_index 3=app_key 4=start 5=end 6=change_key
+    uint8_t edit_field;
+    uint8_t byte_input_buf[4];
 
     // Read test state
     uint32_t read_cid;

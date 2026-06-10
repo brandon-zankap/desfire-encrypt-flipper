@@ -25,9 +25,10 @@ void desfire_seq_config_defaults(DesfireSeqConfig* cfg) {
     cfg->file_id   = 0x00;
     cfg->key_index = 0x00;
     memset(cfg->app_key, 0x69, DESFIRE_KEY_LEN);
-    cfg->start_cid  = 1;
-    cfg->end_cid    = 1000;
-    cfg->change_key = true;
+    cfg->start_cid   = 1;
+    cfg->end_cid     = 1000;
+    cfg->change_key  = true;
+    cfg->decimal_cid = false;
 }
 
 bool desfire_seq_config_save(const DesfireSeqConfig* cfg) {
@@ -43,14 +44,15 @@ bool desfire_seq_config_save(const DesfireSeqConfig* cfg) {
         int len = snprintf(
             buf, sizeof(buf),
             "app_id=%06lX\nfile_id=%u\nkey_index=%u\napp_key=%s\n"
-            "start_cid=%lu\nend_cid=%lu\nchange_key=%s\n",
+            "start_cid=%lu\nend_cid=%lu\nchange_key=%s\ndecimal_cid=%s\n",
             cfg->app_id,
             cfg->file_id,
             cfg->key_index,
             key_hex,
             cfg->start_cid,
             cfg->end_cid,
-            cfg->change_key ? "true" : "false");
+            cfg->change_key ? "true" : "false",
+            cfg->decimal_cid ? "true" : "false");
         if(len > 0) storage_file_write(file, buf, (size_t)len);
     }
     storage_file_close(file);
@@ -102,6 +104,8 @@ bool desfire_seq_config_load(DesfireSeqConfig* cfg) {
                 cfg->end_cid = strtoul(v, NULL, 10);
             else if(strcmp(k, "change_key") == 0)
                 cfg->change_key = strcmp(v, "false") != 0;
+            else if(strcmp(k, "decimal_cid") == 0)
+                cfg->decimal_cid = strcmp(v, "false") != 0;
         }
 
         if(!saved) break;
